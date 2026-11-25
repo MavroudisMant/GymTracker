@@ -5,6 +5,7 @@ object Routes {
     const val LOG_WORKOUT = "log_workout"
     const val TEMPLATES = "templates"
     const val TEMPLATE_BUILDER = "template_builder"
+    const val TEMPLATE_IMPORT = "template_import"
     const val EXERCISE_PROGRESS = "exercise_progress"
     const val EXERCISE_DETAIL = "exercise_detail"
     const val EDIT_EXERCISE = "edit_exercise"

@@ -95,6 +95,8 @@ data class BuilderEditState(
     /** Set once a workout was started from a day; the screen navigates to it. */
     val startedSessionId: Long? = null,
     val deleted: Boolean = false,
+    /** Set after duplicating; the screen opens the copy. */
+    val duplicatedTemplateId: Long? = null,
     /** Target (sets × reps) dialog is open for this template exercise. */
     val targetEditFor: Long? = null,
     val targetEditInitialSets: String = "",
@@ -126,7 +128,9 @@ class TemplateBuilderViewModel(
 
     fun renameDay(dayId: Long, name: String?): Job = viewModelScope.launch { templateRepository.renameDay(dayId, name) }
 
-    fun removeDay(dayId: Long): Job = viewModelScope.launch { templateRepository.removeDay(dayId) }
+    fun removeDay(dayId: Long): Job = viewModelScope.launch { templateRepository.removeDay(templateId, dayId) }
+
+    fun moveDay(dayId: Long, offset: Int): Job = viewModelScope.launch { templateRepository.moveDay(templateId, dayId, offset) }
 
     fun addSection(dayId: Long, name: String) {
         if (name.isBlank()) return
@@ -317,6 +321,19 @@ class TemplateBuilderViewModel(
             val sessionId = workoutRepository.startSessionFromTemplateDay(dayId, LocalDate.now())
             _editState.update { it.copy(startedSessionId = sessionId) }
         }
+    }
+
+    suspend fun exportText(): String? = templateRepository.exportText(templateId)
+
+    fun duplicate() {
+        viewModelScope.launch {
+            val id = templateRepository.duplicate(templateId) ?: return@launch
+            _editState.update { it.copy(duplicatedTemplateId = id) }
+        }
+    }
+
+    fun onDuplicatedHandled() {
+        _editState.update { it.copy(duplicatedTemplateId = null) }
     }
 
     fun onStartedWorkoutHandled() {

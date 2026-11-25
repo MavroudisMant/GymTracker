@@ -29,6 +29,10 @@ interface TemplateDao {
     fun observeTemplateDetail(templateId: Long): Flow<TemplateDetail?>
 
     @Transaction
+    @Query("SELECT * FROM Template WHERE id = :templateId")
+    suspend fun getTemplateDetail(templateId: Long): TemplateDetail?
+
+    @Transaction
     @Query("SELECT * FROM TemplateDay WHERE id = :dayId")
     suspend fun getDayWithExercises(dayId: Long): TemplateDayWithExercises?
 
@@ -46,6 +50,12 @@ interface TemplateDao {
 
     @Query("DELETE FROM Template WHERE id = :id")
     suspend fun deleteTemplateById(id: Long)
+
+    @Query("SELECT * FROM TemplateDay WHERE templateId = :templateId ORDER BY dayNumber, id")
+    suspend fun getDays(templateId: Long): List<TemplateDay>
+
+    @Query("UPDATE TemplateDay SET dayNumber = :dayNumber WHERE id = :id")
+    suspend fun setDayNumber(id: Long, dayNumber: Int)
 
     @Query("UPDATE TemplateDay SET name = :name WHERE id = :id")
     suspend fun renameDay(id: Long, name: String?)

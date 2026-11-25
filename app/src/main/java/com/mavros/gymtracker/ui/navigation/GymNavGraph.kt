@@ -18,6 +18,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -47,11 +49,14 @@ import com.mavros.gymtracker.ui.screens.progress.ExerciseProgressScreen
 import com.mavros.gymtracker.ui.screens.progress.ExerciseProgressViewModel
 import com.mavros.gymtracker.ui.screens.settings.SettingsScreen
 import com.mavros.gymtracker.ui.screens.settings.SettingsViewModel
+import com.mavros.gymtracker.ui.screens.templates.ImportTemplateScreen
+import com.mavros.gymtracker.ui.screens.templates.ImportTemplateViewModel
 import com.mavros.gymtracker.ui.screens.templates.TemplateBuilderScreen
 import com.mavros.gymtracker.ui.screens.templates.TemplateBuilderViewModel
 import com.mavros.gymtracker.ui.screens.templates.TemplatesListScreen
 import com.mavros.gymtracker.ui.screens.templates.TemplatesListViewModel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @Composable
 fun GymNavGraph(
@@ -60,8 +65,17 @@ fun GymNavGraph(
     settingsRepository: SettingsRepository,
     backupRepository: BackupRepository,
     appScope: CoroutineScope,
+    pendingImportText: MutableStateFlow<String?>,
 ) {
     val navController = rememberNavController()
+
+    // Text shared into the app opens the import screen; the screen consumes it.
+    val pendingImport by pendingImportText.collectAsState()
+    LaunchedEffect(pendingImport) {
+        if (pendingImport != null && navController.currentDestination?.route != Routes.TEMPLATE_IMPORT) {
+            navController.navigate(Routes.TEMPLATE_IMPORT) { launchSingleTop = true }
+        }
+    }
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
     val showBottomBar = TopLevelTab.entries.any { it.route == currentDestination?.route }
@@ -123,6 +137,22 @@ fun GymNavGraph(
                 viewModel = viewModel,
                 onOpenTemplate = { id -> navController.navigate(Routes.templateBuilder(id)) },
                 onStartWorkout = { sessionId -> navController.navigate(Routes.logWorkout(sessionId)) },
+                onImport = { navController.navigate(Routes.TEMPLATE_IMPORT) },
+            )
+        }
+
+        composable(Routes.TEMPLATE_IMPORT) {
+            val viewModel: ImportTemplateViewModel =
+                viewModel(factory = ImportTemplateViewModel.factory(templateRepository, workoutRepository))
+            ImportTemplateScreen(
+                viewModel = viewModel,
+                pendingImportText = pendingImportText,
+                onImported = { id ->
+                    navController.navigate(Routes.templateBuilder(id)) {
+                        popUpTo(Routes.TEMPLATE_IMPORT) { inclusive = true }
+                    }
+                },
+                onBack = { navController.popBackStack() },
             )
         }
 
@@ -137,6 +167,11 @@ fun GymNavGraph(
             TemplateBuilderScreen(
                 viewModel = viewModel,
                 onStartWorkout = { sessionId -> navController.navigate(Routes.logWorkout(sessionId)) },
+                onOpenTemplate = { id ->
+                    navController.navigate(Routes.templateBuilder(id)) {
+                        popUpTo(Routes.TEMPLATE_BUILDER_PATTERN) { inclusive = true }
+                    }
+                },
                 onBack = { navController.popBackStack() },
             )
         }

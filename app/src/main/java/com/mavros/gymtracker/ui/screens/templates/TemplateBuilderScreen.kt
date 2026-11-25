@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -33,6 +33,8 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MoreVert
@@ -70,6 +72,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -83,15 +86,22 @@ import com.mavros.gymtracker.ui.components.GymTopBar
 import com.mavros.gymtracker.ui.components.NewExerciseDialog
 import com.mavros.gymtracker.ui.components.TargetAreaPill
 import com.mavros.gymtracker.ui.components.rememberReorderState
+import com.mavros.gymtracker.ui.components.rememberTextFileSaver
 import com.mavros.gymtracker.ui.components.reorderItem
+import com.mavros.gymtracker.ui.components.shareText
+import com.mavros.gymtracker.ui.components.templateFileName
+import kotlinx.coroutines.launch
 
 @Composable
 fun TemplateBuilderScreen(
     viewModel: TemplateBuilderViewModel,
     onStartWorkout: (sessionId: Long) -> Unit,
+    onOpenTemplate: (templateId: Long) -> Unit,
     onBack: () -> Unit,
 ) {
     val template by viewModel.template.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val saveFile = rememberTextFileSaver()
     val allExercises by viewModel.allExercises.collectAsStateWithLifecycle()
     val editState by viewModel.editState.collectAsStateWithLifecycle()
 
@@ -114,6 +124,12 @@ fun TemplateBuilderScreen(
             onStartWorkout(sessionId)
         }
     }
+    LaunchedEffect(editState.duplicatedTemplateId) {
+        editState.duplicatedTemplateId?.let { id ->
+            viewModel.onDuplicatedHandled()
+            onOpenTemplate(id)
+        }
+    }
     LaunchedEffect(editState.deleted) {
         if (editState.deleted) {
             viewModel.onDeletedHandled()
@@ -128,6 +144,13 @@ fun TemplateBuilderScreen(
                 dayCount = template?.days?.size ?: 0,
                 onRename = { showRenameTemplate = true },
                 onDelete = { showDeleteTemplate = true },
+                onShare = { scope.launch { viewModel.exportText()?.let { context.shareText(template?.name ?: "Template", it) } } },
+                onSaveFile = {
+                    scope.launch {
+                        viewModel.exportText()?.let { saveFile(templateFileName(template?.name ?: "template"), it) }
+                    }
+                },
+                onDuplicate = viewModel::duplicate,
                 onBack = onBack,
             )
         },
@@ -156,7 +179,7 @@ fun TemplateBuilderScreen(
                     )
                 }
             }
-            items(ui.days, key = { it.id }) { day ->
+            itemsIndexed(ui.days, key = { _, day -> day.id }) { dayIndex, day ->
                 val expanded = ui.days.size == 1 || day.id in expandedDayIds
                 DayCard(
                     day = day,
@@ -183,6 +206,8 @@ fun TemplateBuilderScreen(
                     onUngroup = { viewModel.ungroupSuperset(day.id) },
                     onRenameDay = { renamingDayId = day.id },
                     onRemoveDay = { dayPendingDelete = day.id },
+                    onMoveUp = if (dayIndex > 0) { { viewModel.moveDay(day.id, -1) } } else null,
+                    onMoveDown = if (dayIndex < ui.days.lastIndex) { { viewModel.moveDay(day.id, +1) } } else null,
                     onStartWorkout = { viewModel.startWorkout(day.id) },
                 )
             }
@@ -355,7 +380,16 @@ private fun TargetDialog(
 }
 
 @Composable
-private fun BuilderHeader(name: String, dayCount: Int, onRename: () -> Unit, onDelete: () -> Unit, onBack: () -> Unit) {
+private fun BuilderHeader(
+    name: String,
+    dayCount: Int,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    onShare: () -> Unit,
+    onSaveFile: () -> Unit,
+    onDuplicate: () -> Unit,
+    onBack: () -> Unit,
+) {
     var menuOpen by remember { mutableStateOf(false) }
     GymTopBar(
         title = name,
@@ -370,6 +404,12 @@ private fun BuilderHeader(name: String, dayCount: Int, onRename: () -> Unit, onD
                         menuOpen = false
                         onRename()
                     }
+                    TemplateExportMenuItems(
+                        onShare = onShare,
+                        onSaveFile = onSaveFile,
+                        onDuplicate = onDuplicate,
+                        close = { menuOpen = false },
+                    )
                     MenuItem("Delete template", Icons.Outlined.Delete, destructive = true) {
                         menuOpen = false
                         onDelete()
@@ -428,6 +468,8 @@ private fun DayCard(
     onUngroup: () -> Unit,
     onRenameDay: () -> Unit,
     onRemoveDay: () -> Unit,
+    onMoveUp: (() -> Unit)?,
+    onMoveDown: (() -> Unit)?,
     onStartWorkout: () -> Unit,
 ) {
     val exercises = day.allExercises
@@ -479,6 +521,8 @@ private fun DayCard(
             }
             OverflowMenu("Day options") { close ->
                 MenuItem("Rename day", Icons.Outlined.Edit) { close(); onRenameDay() }
+                onMoveUp?.let { move -> MenuItem("Move up", Icons.Rounded.ArrowUpward) { close(); move() } }
+                onMoveDown?.let { move -> MenuItem("Move down", Icons.Rounded.ArrowDownward) { close(); move() } }
                 MenuItem("Add section", Icons.Outlined.PlaylistAdd) { close(); onAddSection() }
                 MenuItem("Remove day", Icons.Outlined.Delete, destructive = true) { close(); onRemoveDay() }
             }

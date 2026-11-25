@@ -2,6 +2,7 @@ package com.mavros.gymtracker.ui.screens.templates
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -14,7 +15,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.SaveAlt
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.outlined.ListAlt
 import androidx.compose.material.icons.rounded.Add
@@ -22,10 +29,15 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -36,25 +48,40 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mavros.gymtracker.ui.components.ConfirmDialog
 import com.mavros.gymtracker.ui.components.EmptyState
 import com.mavros.gymtracker.ui.components.GymTopBar
+import com.mavros.gymtracker.ui.components.rememberTextFileSaver
+import com.mavros.gymtracker.ui.components.shareText
+import com.mavros.gymtracker.ui.components.templateFileName
+import kotlinx.coroutines.launch
 
 @Composable
 fun TemplatesListScreen(
     viewModel: TemplatesListViewModel,
     onOpenTemplate: (Long) -> Unit,
     onStartWorkout: (sessionId: Long) -> Unit,
+    onImport: () -> Unit,
 ) {
     val templates by viewModel.templates.collectAsStateWithLifecycle()
     val createdId by viewModel.createdTemplateId.collectAsStateWithLifecycle()
     val startedSessionId by viewModel.startedSessionId.collectAsStateWithLifecycle()
     var showNewDialog by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<TemplateListItemUi?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+    val saveFile = rememberTextFileSaver { saved ->
+        scope.launch { snackbar.showSnackbar(if (saved) "Template saved" else "Couldn't save the file") }
+    }
 
     // A freshly created template opens straight into the builder.
     LaunchedEffect(createdId) {
@@ -71,7 +98,19 @@ fun TemplatesListScreen(
     }
 
     Scaffold(
-        topBar = { GymTopBar("Templates") },
+        topBar = {
+            GymTopBar(
+                title = "Templates",
+                actions = {
+                    TextButton(onClick = onImport) {
+                        Icon(Icons.Outlined.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Import")
+                    }
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showNewDialog = true },
@@ -90,9 +129,10 @@ fun TemplatesListScreen(
                     EmptyState(
                         icon = Icons.Outlined.ListAlt,
                         title = "No templates yet",
-                        message = "Templates hold your training days, so a workout starts pre-filled with the right exercises.",
-                        actionLabel = "Create a template",
-                        onAction = { showNewDialog = true },
+                        message = "Templates hold your training days, so a workout starts pre-filled with the right " +
+                            "exercises. Create one, or import one written by you or an AI.",
+                        actionLabel = "Import a template",
+                        onAction = onImport,
                     )
                 }
             }
@@ -101,9 +141,36 @@ fun TemplatesListScreen(
                     template = template,
                     onEdit = { onOpenTemplate(template.id) },
                     onStartDay = viewModel::startWorkout,
+                    onShare = {
+                        scope.launch {
+                            viewModel.exportText(template.id)?.let { context.shareText(template.name, it) }
+                        }
+                    },
+                    onSaveFile = {
+                        scope.launch {
+                            viewModel.exportText(template.id)?.let { saveFile(templateFileName(template.name), it) }
+                        }
+                    },
+                    onDuplicate = {
+                        viewModel.duplicate(template.id)
+                        scope.launch { snackbar.showSnackbar("Duplicated “${template.name}”") }
+                    },
+                    onDelete = { pendingDelete = template },
                 )
             }
         }
+    }
+
+    pendingDelete?.let { template ->
+        ConfirmDialog(
+            title = "Delete “${template.name}”?",
+            message = "This permanently deletes the template and all its days. Logged workouts are kept.",
+            onConfirm = {
+                viewModel.deleteTemplate(template.id)
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null },
+        )
     }
 
     if (showNewDialog) {
@@ -121,7 +188,16 @@ fun TemplatesListScreen(
 
 /** A template with one row per day, each with its own Start button. */
 @Composable
-private fun TemplateCard(template: TemplateListItemUi, onEdit: () -> Unit, onStartDay: (Long) -> Unit) {
+private fun TemplateCard(
+    template: TemplateListItemUi,
+    onEdit: () -> Unit,
+    onStartDay: (Long) -> Unit,
+    onShare: () -> Unit,
+    onSaveFile: () -> Unit,
+    onDuplicate: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -150,6 +226,29 @@ private fun TemplateCard(template: TemplateListItemUi, onEdit: () -> Unit, onSta
                     Spacer(Modifier.width(6.dp))
                     Text("Edit")
                 }
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Rounded.MoreVert, contentDescription = "Template options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        TemplateExportMenuItems(
+                            onShare = onShare,
+                            onSaveFile = onSaveFile,
+                            onDuplicate = onDuplicate,
+                            close = { menuOpen = false },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            },
+                            onClick = {
+                                menuOpen = false
+                                onDelete()
+                            },
+                        )
+                    }
+                }
             }
             template.days.forEach { day ->
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
@@ -176,6 +275,26 @@ private fun TemplateCard(template: TemplateListItemUi, onEdit: () -> Unit, onSta
             }
         }
     }
+}
+
+/** Share / Save as file / Duplicate, shared by the templates list and the template editor menus. */
+@Composable
+fun TemplateExportMenuItems(onShare: () -> Unit, onSaveFile: () -> Unit, onDuplicate: () -> Unit, close: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text("Share as text") },
+        leadingIcon = { Icon(Icons.Outlined.Share, contentDescription = null) },
+        onClick = { close(); onShare() },
+    )
+    DropdownMenuItem(
+        text = { Text("Save as file") },
+        leadingIcon = { Icon(Icons.Outlined.SaveAlt, contentDescription = null) },
+        onClick = { close(); onSaveFile() },
+    )
+    DropdownMenuItem(
+        text = { Text("Duplicate") },
+        leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
+        onClick = { close(); onDuplicate() },
+    )
 }
 
 /** Single text-field dialog used for naming templates, days and sections. */

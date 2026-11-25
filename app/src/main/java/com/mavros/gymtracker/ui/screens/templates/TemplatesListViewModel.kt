@@ -60,6 +60,13 @@ class TemplatesListViewModel(
         _startedSessionId.value = null
     }
 
+    /** The template as importable text, for sharing or saving. */
+    suspend fun exportText(id: Long): String? = repository.exportText(id)
+
+    fun duplicate(id: Long) {
+        viewModelScope.launch { repository.duplicate(id) }
+    }
+
     fun deleteTemplate(id: Long) {
         viewModelScope.launch { repository.deleteTemplate(id) }
     }
