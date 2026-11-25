@@ -8,6 +8,7 @@ data class ExerciseToSave(
     val exerciseId: Long,
     val supersetGroup: String?,
     val sectionName: String?,
+    val increaseNextTime: Boolean,
     val sets: List<SetToSave>,
 )
 
@@ -82,9 +83,14 @@ class WorkoutRepository(private val db: GymDatabase) {
         return requireNotNull(exerciseDao.getById(id))
     }
 
-    /** The sets from the most recent session that included this exercise, in order. */
-    suspend fun lastLoggedSets(exerciseId: Long): List<SetEntry> =
-        workoutDao.getExerciseHistory(exerciseId).firstOrNull()?.sets?.sortedBy { it.setNumber } ?: emptyList()
+    /**
+     * The last time this exercise was logged before [date], ignoring [excludeSessionId] (the session
+     * being edited). Its sets are unsorted; sort by setNumber.
+     */
+    suspend fun previousPerformance(exerciseId: Long, excludeSessionId: Long?, date: LocalDate): ExerciseSessionHistory? =
+        workoutDao.getPreviousPerformance(exerciseId, excludeSessionId ?: -1, date)
+
+    fun observeSessionVolumes(): Flow<List<SessionVolume>> = workoutDao.observeSessionVolumes()
 
     suspend fun deleteSession(id: Long) = workoutDao.deleteSessionById(id)
 
@@ -145,6 +151,7 @@ class WorkoutRepository(private val db: GymDatabase) {
                     position = index,
                     supersetGroup = item.supersetGroup,
                     sectionName = item.sectionName,
+                    increaseNextTime = item.increaseNextTime,
                 ),
             )
             if (item.sets.isNotEmpty()) {

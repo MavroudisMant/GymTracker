@@ -6,10 +6,12 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mavros.gymtracker.data.Exercise
+import com.mavros.gymtracker.data.ExerciseSessionHistory
 import com.mavros.gymtracker.data.ExerciseToSave
 import com.mavros.gymtracker.data.SetToSave
 import com.mavros.gymtracker.data.TargetArea
 import com.mavros.gymtracker.data.WorkoutRepository
+import com.mavros.gymtracker.ui.components.formatWeight
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,7 +46,19 @@ data class LoggedExerciseUi(
     val isTimed: Boolean = false,
     val supersetGroup: String? = null,
     val sectionName: String? = null,
+    /** "Go heavier next time" flag, saved with this session. */
+    val increaseNextTime: Boolean = false,
     val sets: List<LoggedSetUi> = emptyList(),
+)
+
+data class PreviousSetUi(val weight: Double?, val reps: Int)
+
+/** What was logged the last time an exercise was done (before this workout). */
+data class PreviousPerformanceUi(
+    val date: LocalDate,
+    val sets: List<PreviousSetUi>,
+    /** The user flagged it last time: increase the weight now. */
+    val increaseFlagged: Boolean,
 )
 
 data class LogWorkoutUiState(
@@ -54,10 +68,22 @@ data class LogWorkoutUiState(
     val templateDayId: Long? = null,
     val templateDayName: String? = null,
     val exercises: List<LoggedExerciseUi> = emptyList(),
+    /** Exercise id -> its previous performance. Display only; not part of the auto-save key. */
+    val previous: Map<Long, PreviousPerformanceUi> = emptyMap(),
     val selectedExerciseIds: Set<Long> = emptySet(),
     val showAddExerciseDialog: Boolean = false,
     val pendingNewExerciseName: String? = null,
-)
+) {
+    /** Weight × reps over every valid set, skipping timed exercises and sets without a weight. */
+    val totalVolume: Double
+        get() = exercises.filterNot { it.isTimed }.sumOf { exercise ->
+            exercise.sets.sumOf { set ->
+                val reps = set.reps.toIntOrNull() ?: 0
+                val weight = set.weight.replace(',', '.').toDoubleOrNull() ?: 0.0
+                if (reps > 0 && weight > 0.0) weight * reps else 0.0
+            }
+        }
+}
 
 /**
  * Logs (or edits) one workout. Changes auto-save 1.5 s after the last edit; [saveImmediately] runs
@@ -76,6 +102,10 @@ class LogWorkoutViewModel(
 
     private val clientIds = AtomicLong(0)
     private val saveMutex = Mutex()
+
+    /** Set once the workout is deleted, so no later (auto-)save brings it back. */
+    @Volatile
+    private var deleted = false
 
     init {
         if (sessionId != null) loadSession(sessionId)
@@ -111,6 +141,7 @@ class LogWorkoutViewModel(
                         isTimed = item.exercise.isTimed,
                         supersetGroup = item.sessionExercise.supersetGroup,
                         sectionName = item.sessionExercise.sectionName,
+                        increaseNextTime = item.sessionExercise.increaseNextTime,
                         // A session just started from a template has no sets yet: pre-fill its targets.
                         sets = if (sets.isEmpty()) {
                             suggestedSets(targets[item.exercise.id])
@@ -120,8 +151,24 @@ class LogWorkoutViewModel(
                     )
                 },
             )
+            refreshPrevious()
         }
     }
+
+    /** Re-reads the previous performance of every exercise in the workout (e.g. after a date change). */
+    private suspend fun refreshPrevious() {
+        val state = _uiState.value
+        val previous = state.exercises.map { it.exerciseId }.distinct().mapNotNull { exerciseId ->
+            repository.previousPerformance(exerciseId, state.sessionId, state.date)?.let { exerciseId to it.toUi() }
+        }.toMap()
+        _uiState.update { it.copy(previous = previous) }
+    }
+
+    private fun ExerciseSessionHistory.toUi() = PreviousPerformanceUi(
+        date = date,
+        sets = sets.sortedBy { it.setNumber }.map { PreviousSetUi(it.weight, it.reps) },
+        increaseFlagged = sessionExercise.increaseNextTime,
+    )
 
     /** Empty rows for a template target (sets × reps); one empty row if there's no target. */
     private fun suggestedSets(target: Pair<Int?, Int?>?): List<LoggedSetUi> {
@@ -133,6 +180,7 @@ class LogWorkoutViewModel(
 
     fun onDateSelected(date: LocalDate) {
         _uiState.update { it.copy(date = date) }
+        viewModelScope.launch { refreshPrevious() }
     }
 
     fun openAddExerciseDialog() {
@@ -146,14 +194,16 @@ class LogWorkoutViewModel(
     /** Adds the exercise pre-filled with the sets from the last time it was logged. */
     fun addExistingExercise(exercise: Exercise) {
         viewModelScope.launch {
-            val lastSets = repository.lastLoggedSets(exercise.id)
-            val sets = if (lastSets.isEmpty()) {
+            val current = _uiState.value
+            val previous = repository.previousPerformance(exercise.id, current.sessionId, current.date)?.toUi()
+            val sets = if (previous == null || previous.sets.isEmpty()) {
                 listOf(LoggedSetUi(nextId()))
             } else {
-                lastSets.map { LoggedSetUi(nextId(), it.weight.toCleanString(), it.reps.toString()) }
+                previous.sets.map { LoggedSetUi(nextId(), it.weight.toCleanString(), it.reps.toString()) }
             }
             _uiState.update {
                 it.copy(
+                    previous = if (previous != null) it.previous + (exercise.id to previous) else it.previous,
                     exercises = it.exercises + LoggedExerciseUi(
                         clientId = nextId(),
                         exerciseId = exercise.id,
@@ -214,6 +264,10 @@ class LogWorkoutViewModel(
         updateExercise(exerciseClientId) { exercise ->
             exercise.copy(sets = exercise.sets.filter { it.clientId != setClientId })
         }
+    }
+
+    fun toggleIncreaseNextTime(exerciseClientId: Long) {
+        updateExercise(exerciseClientId) { it.copy(increaseNextTime = !it.increaseNextTime) }
     }
 
     fun removeExercise(exerciseClientId: Long) {
@@ -277,14 +331,23 @@ class LogWorkoutViewModel(
         appScope.launch { saveNow() }
     }
 
+    /** Deletes this workout. Runs on the app scope, after any in-flight save, since the screen closes. */
+    fun deleteWorkout() {
+        deleted = true
+        appScope.launch {
+            saveMutex.withLock { _uiState.value.sessionId?.let { repository.deleteSession(it) } }
+        }
+    }
+
     private suspend fun saveNow() = saveMutex.withLock {
         val state = _uiState.value
-        if (state.exercises.isEmpty()) return@withLock
+        if (deleted || state.exercises.isEmpty()) return@withLock
         val toSave = state.exercises.map { exercise ->
             ExerciseToSave(
                 exerciseId = exercise.exerciseId,
                 supersetGroup = exercise.supersetGroup,
                 sectionName = exercise.sectionName,
+                increaseNextTime = exercise.increaseNextTime,
                 sets = exercise.sets.mapNotNull { it.toDomainOrNull() },
             )
         }
@@ -314,11 +377,7 @@ class LogWorkoutViewModel(
         return SetToSave(parsedWeight, parsedReps)
     }
 
-    private fun Double?.toCleanString(): String = when {
-        this == null -> ""
-        this % 1.0 == 0.0 -> toLong().toString()
-        else -> toString()
-    }
+    private fun Double?.toCleanString(): String = this?.formatWeight() ?: ""
 
     companion object {
         fun factory(

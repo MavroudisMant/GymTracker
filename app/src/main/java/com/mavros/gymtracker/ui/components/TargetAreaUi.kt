@@ -79,7 +79,7 @@ private fun AreaOption(
         modifier = modifier,
         shape = MaterialTheme.shapes.small,
         color = if (selected) colors.primaryContainer else colors.surface,
-        contentColor = if (selected) colors.onPrimaryFixed else colors.onSurface,
+        contentColor = if (selected) colors.onPrimaryContainer else colors.onSurface,
         border = if (selected) null else BorderStroke(1.dp, colors.outlineVariant),
     ) {
         Text(

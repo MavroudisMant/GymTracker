@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mavros.gymtracker.data.TemplateRepository
 import com.mavros.gymtracker.data.TemplateWithDays
+import com.mavros.gymtracker.data.WorkoutRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,15 +15,20 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 data class TemplateListItemUi(
     val id: Long,
     val name: String,
-    val dayCount: Int,
-    val daySummary: String,
+    val days: List<TemplateDayItemUi>,
 )
 
-class TemplatesListViewModel(private val repository: TemplateRepository) : ViewModel() {
+data class TemplateDayItemUi(val id: Long, val title: String)
+
+class TemplatesListViewModel(
+    private val repository: TemplateRepository,
+    private val workoutRepository: WorkoutRepository,
+) : ViewModel() {
     val templates: StateFlow<List<TemplateListItemUi>> = repository.observeTemplates()
         .map { templates -> templates.map { it.toUi() } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -40,23 +46,36 @@ class TemplatesListViewModel(private val repository: TemplateRepository) : ViewM
         _createdTemplateId.value = null
     }
 
+    /** Set after starting a workout from a day so the screen can open it. */
+    private val _startedSessionId = MutableStateFlow<Long?>(null)
+    val startedSessionId: StateFlow<Long?> = _startedSessionId.asStateFlow()
+
+    fun startWorkout(dayId: Long) {
+        viewModelScope.launch {
+            _startedSessionId.value = workoutRepository.startSessionFromTemplateDay(dayId, LocalDate.now())
+        }
+    }
+
+    fun onStartedWorkoutHandled() {
+        _startedSessionId.value = null
+    }
+
     fun deleteTemplate(id: Long) {
         viewModelScope.launch { repository.deleteTemplate(id) }
     }
 
     private fun TemplateWithDays.toUi(): TemplateListItemUi {
-        val dayNames = days.sortedBy { it.dayNumber }.map { it.name ?: "Day ${it.dayNumber}" }
         return TemplateListItemUi(
             id = template.id,
             name = template.name,
-            dayCount = days.size,
-            daySummary = if (dayNames.isEmpty()) "No days yet" else dayNames.joinToString(" · "),
+            days = days.sortedBy { it.dayNumber }.map { TemplateDayItemUi(it.id, it.name ?: "Day ${it.dayNumber}") },
         )
     }
 
     companion object {
-        fun factory(repository: TemplateRepository): ViewModelProvider.Factory = viewModelFactory {
-            initializer { TemplatesListViewModel(repository) }
+        fun factory(repository: TemplateRepository, workoutRepository: WorkoutRepository): ViewModelProvider.Factory =
+            viewModelFactory {
+            initializer { TemplatesListViewModel(repository, workoutRepository) }
         }
     }
 }

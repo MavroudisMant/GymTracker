@@ -100,7 +100,7 @@ class BackupRepository(
         const val SMALLEST_POSSIBLE_DATABASE = 512L
 
         /** Keep in sync with the version in [GymDatabase]. */
-        const val DATABASE_VERSION = 6
+        const val DATABASE_VERSION = 7
 
         val TIMESTAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmm")
         val REQUIRED_TABLES = listOf(

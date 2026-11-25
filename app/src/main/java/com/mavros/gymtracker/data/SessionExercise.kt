@@ -29,4 +29,6 @@ data class SessionExercise(
     val position: Int,
     val supersetGroup: String? = null,
     val sectionName: String? = null,
+    /** Flagged while logging: go heavier the next time this exercise is done. */
+    val increaseNextTime: Boolean = false,
 )

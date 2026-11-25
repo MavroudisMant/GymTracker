@@ -1,25 +1,55 @@
 package com.mavros.gymtracker.ui.screens.templates
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
+import androidx.compose.material.icons.outlined.CheckBox
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.LinkOff
+import androidx.compose.material.icons.outlined.PlaylistAdd
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -32,19 +62,24 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mavros.gymtracker.ui.components.AddExerciseDialog
 import com.mavros.gymtracker.ui.components.ConfirmDialog
 import com.mavros.gymtracker.ui.components.DragAutoScroller
 import com.mavros.gymtracker.ui.components.DragHandle
+import com.mavros.gymtracker.ui.components.EmptyState
+import com.mavros.gymtracker.ui.components.GymTopBar
 import com.mavros.gymtracker.ui.components.NewExerciseDialog
 import com.mavros.gymtracker.ui.components.TargetAreaPill
 import com.mavros.gymtracker.ui.components.rememberReorderState
@@ -66,6 +101,8 @@ fun TemplateBuilderScreen(
     var showDeleteTemplate by remember { mutableStateOf(false) }
     var addSectionForDayId by remember { mutableStateOf<Long?>(null) }
     var renamingSectionId by remember { mutableStateOf<Long?>(null) }
+    // Days the user opened. A template with a single day always shows it open.
+    var expandedDayIds by rememberSaveable { mutableStateOf(listOf<Long>()) }
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -90,6 +127,7 @@ fun TemplateBuilderScreen(
                 name = template?.name ?: "",
                 dayCount = template?.days?.size ?: 0,
                 onRename = { showRenameTemplate = true },
+                onDelete = { showDeleteTemplate = true },
                 onBack = onBack,
             )
         },
@@ -105,16 +143,32 @@ fun TemplateBuilderScreen(
                     autoScroller.viewportBottom = top + it.size.height
                 },
             state = listState,
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (ui == null) return@LazyColumn
+            if (ui.days.isEmpty()) {
+                item {
+                    EmptyState(
+                        icon = Icons.Outlined.PlaylistAdd,
+                        title = "No days yet",
+                        message = "Add a day for each workout in this plan, e.g. Upper body, Lower body.",
+                    )
+                }
+            }
             items(ui.days, key = { it.id }) { day ->
+                val expanded = ui.days.size == 1 || day.id in expandedDayIds
                 DayCard(
                     day = day,
+                    expanded = expanded,
+                    canCollapse = ui.days.size > 1,
+                    onToggleExpanded = {
+                        expandedDayIds = if (day.id in expandedDayIds) expandedDayIds - day.id else expandedDayIds + day.id
+                    },
                     autoScroller = autoScroller,
                     selectedIds = editState.selectedExerciseIds,
                     onToggleSelect = viewModel::toggleSelection,
+                    onClearSelection = viewModel::clearSelection,
                     onAddExercise = { sectionId -> viewModel.openAddExercise(day.id, sectionId) },
                     onAddSection = { addSectionForDayId = day.id },
                     onRenameSection = { renamingSectionId = it },
@@ -133,11 +187,14 @@ fun TemplateBuilderScreen(
                 )
             }
             item {
-                OutlinedButton(onClick = { viewModel.addDay() }, modifier = Modifier.fillMaxWidth()) { Text("+ Add day") }
-            }
-            item {
-                TextButton(onClick = { showDeleteTemplate = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Delete template", color = MaterialTheme.colorScheme.error)
+                OutlinedButton(
+                    onClick = { viewModel.addDay() },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add day")
                 }
             }
         }
@@ -159,7 +216,7 @@ fun TemplateBuilderScreen(
     if (showDeleteTemplate) {
         ConfirmDialog(
             title = "Delete template?",
-            message = "This permanently deletes the template and all its days.",
+            message = "This permanently deletes the template and all its days. Logged workouts are kept.",
             onConfirm = {
                 showDeleteTemplate = false
                 viewModel.deleteTemplate()
@@ -203,6 +260,7 @@ fun TemplateBuilderScreen(
         NameDialog(
             title = "Rename day",
             label = "Day name (optional)",
+            initialValue = template?.days?.firstOrNull { it.id == dayId }?.name ?: "",
             onDismiss = { renamingDayId = null },
             onConfirm = {
                 viewModel.renameDay(dayId, it)
@@ -227,6 +285,7 @@ fun TemplateBuilderScreen(
         NameDialog(
             title = "Rename section",
             label = "Section name",
+            initialValue = template?.days?.flatMap { it.sections }?.firstOrNull { it.id == sectionId }?.name ?: "",
             onDismiss = { renamingSectionId = null },
             onConfirm = {
                 viewModel.renameSection(sectionId, it)
@@ -296,28 +355,51 @@ private fun TargetDialog(
 }
 
 @Composable
-private fun BuilderHeader(name: String, dayCount: Int, onRename: () -> Unit, onBack: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surface) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(top = 4.dp, end = 16.dp, bottom = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onBack) { Text("←") }
-            Text(
-                text = name,
-                modifier = Modifier.weight(1f).clickable(onClick = onRename),
-                fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                text = if (dayCount == 1) "1 day" else "$dayCount days",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
+private fun BuilderHeader(name: String, dayCount: Int, onRename: () -> Unit, onDelete: () -> Unit, onBack: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    GymTopBar(
+        title = name,
+        subtitle = if (dayCount == 1) "1 day" else "$dayCount days",
+        onBack = onBack,
+        onTitleClick = onRename,
+        actions = {
+            Box {
+                IconButton(onClick = { menuOpen = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "More") }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    MenuItem("Rename template", Icons.Outlined.Edit) {
+                        menuOpen = false
+                        onRename()
+                    }
+                    MenuItem("Delete template", Icons.Outlined.Delete, destructive = true) {
+                        menuOpen = false
+                        onDelete()
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun MenuItem(label: String, icon: ImageVector, destructive: Boolean = false, onClick: () -> Unit) {
+    val color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    DropdownMenuItem(
+        text = { Text(label, color = color) },
+        leadingIcon = { Icon(icon, contentDescription = null, tint = color) },
+        onClick = onClick,
+    )
+}
+
+/** ⋮ button with a dropdown; [content] receives a callback that closes the menu. */
+@Composable
+private fun OverflowMenu(description: String, content: @Composable ColumnScope.(close: () -> Unit) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Rounded.MoreVert, contentDescription = description, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            content { open = false }
         }
     }
 }
@@ -325,9 +407,13 @@ private fun BuilderHeader(name: String, dayCount: Int, onRename: () -> Unit, onB
 @Composable
 private fun DayCard(
     day: BuilderDayUi,
+    expanded: Boolean,
+    canCollapse: Boolean,
+    onToggleExpanded: () -> Unit,
     autoScroller: DragAutoScroller,
     selectedIds: Set<Long>,
     onToggleSelect: (Long) -> Unit,
+    onClearSelection: () -> Unit,
     onAddExercise: (sectionId: Long?) -> Unit,
     onAddSection: () -> Unit,
     onRenameSection: (Long) -> Unit,
@@ -344,79 +430,92 @@ private fun DayCard(
     onRemoveDay: () -> Unit,
     onStartWorkout: () -> Unit,
 ) {
-    val selected = day.allExercises.filter { it.id in selectedIds }
-    val canMakeSuperset = selected.size >= 2
-    val canUngroup = selected.any { it.supersetGroup != null }
+    val exercises = day.allExercises
+    val selectedInDay = exercises.filter { it.id in selectedIds }
+    val selecting = selectedIds.isNotEmpty()
     val namedSections = day.sections.filter { it.id != null }
     val ungrouped = day.sections.firstOrNull { it.id == null }
     var movingExerciseId by remember { mutableStateOf<Long?>(null) }
     val sectionReorder = rememberReorderState(day.id)
+    val chevronRotation by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
 
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        // Header: tap to open/close. Start is always reachable without opening the day.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = canCollapse, onClick = onToggleExpanded)
+                .padding(start = if (canCollapse) 8.dp else 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (canCollapse) {
+                Icon(
+                    Icons.Rounded.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    modifier = Modifier.padding(end = 6.dp).rotate(chevronRotation),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(day.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = day.title,
-                    modifier = Modifier.weight(1f),
-                    fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.titleMedium,
+                    text = if (exercises.size == 1) "1 exercise" else "${exercises.size} exercises",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
                 )
-                TextButton(onClick = onRenameDay) { Text("Rename") }
-                TextButton(onClick = onRemoveDay) { Text("Remove") }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onAddSection, modifier = Modifier.weight(1f)) { Text("+ Add section") }
-                Button(onClick = onStartWorkout, modifier = Modifier.weight(1f)) { Text("Start workout") }
+            FilledTonalButton(
+                onClick = onStartWorkout,
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+            ) {
+                Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Start")
             }
+            OverflowMenu("Day options") { close ->
+                MenuItem("Rename day", Icons.Outlined.Edit) { close(); onRenameDay() }
+                MenuItem("Add section", Icons.Outlined.PlaylistAdd) { close(); onAddSection() }
+                MenuItem("Remove day", Icons.Outlined.Delete, destructive = true) { close(); onRemoveDay() }
+            }
+        }
 
-            if (ungrouped != null) {
-                ExerciseList(
-                    exercises = ungrouped.exercises,
-                    reorderKey = "ungrouped-${day.id}",
-                    autoScroller = autoScroller,
-                    selectedIds = selectedIds,
-                    canMove = namedSections.isNotEmpty(),
-                    onReorderIds = onReorderExerciseIds,
-                    onToggleSelect = onToggleSelect,
-                    onEditTarget = onEditTarget,
-                    onMoveToSection = { movingExerciseId = it },
-                    onRemove = onRemoveExercise,
-                )
-                if (namedSections.isEmpty()) {
-                    TextButton(onClick = { onAddExercise(null) }) { Text("+ Add exercise") }
+        if (!expanded && exercises.isNotEmpty()) {
+            Text(
+                text = exercises.joinToString(" · ") { it.name },
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+
+        AnimatedVisibility(visible = expanded) {
+            Column(Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp)) {
+                HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                if (selectedInDay.isNotEmpty()) {
+                    SelectionBar(
+                        count = selectedInDay.size,
+                        canMakeSuperset = selectedInDay.size >= 2,
+                        canUngroup = selectedInDay.any { it.supersetGroup != null },
+                        onMakeSuperset = onMakeSuperset,
+                        onUngroup = onUngroup,
+                        onClear = onClearSelection,
+                    )
                 }
-            }
 
-            namedSections.forEachIndexed { index, section ->
-                val sectionId = section.id ?: return@forEachIndexed
-                Column(Modifier.reorderItem(sectionReorder, index)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        DragHandle(sectionReorder, index, namedSections.size, autoScroller, onReorderSections)
-                        Text(
-                            text = section.name ?: "",
-                            modifier = Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold,
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        TextButton(onClick = { onRenameSection(sectionId) }) { Text("Rename") }
-                        TextButton(onClick = { onRemoveSection(sectionId) }) { Text("Remove") }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = section.includeInWorkout,
-                            onCheckedChange = { onSetSectionIncluded(sectionId, it) },
-                        )
-                        Text("Show in workout", style = MaterialTheme.typography.bodySmall)
-                    }
+                if (ungrouped != null && (ungrouped.exercises.isNotEmpty() || namedSections.isEmpty())) {
                     ExerciseList(
-                        exercises = section.exercises,
-                        reorderKey = "section-$sectionId",
+                        exercises = ungrouped.exercises,
+                        reorderKey = "ungrouped-${day.id}",
                         autoScroller = autoScroller,
                         selectedIds = selectedIds,
+                        selecting = selecting,
                         canMove = namedSections.isNotEmpty(),
                         onReorderIds = onReorderExerciseIds,
                         onToggleSelect = onToggleSelect,
@@ -424,14 +523,73 @@ private fun DayCard(
                         onMoveToSection = { movingExerciseId = it },
                         onRemove = onRemoveExercise,
                     )
-                    TextButton(onClick = { onAddExercise(sectionId) }) { Text("+ Add exercise") }
+                    if (namedSections.isEmpty()) AddExerciseButton { onAddExercise(null) }
                 }
-            }
 
-            if (canMakeSuperset || canUngroup) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (canMakeSuperset) TextButton(onClick = onMakeSuperset) { Text("⛓ Make superset") }
-                    if (canUngroup) TextButton(onClick = onUngroup) { Text("Ungroup") }
+                namedSections.forEachIndexed { index, section ->
+                    val sectionId = section.id ?: return@forEachIndexed
+                    Column(Modifier.reorderItem(sectionReorder, index)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            DragHandle(sectionReorder, index, namedSections.size, autoScroller, onReorderSections)
+                            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = section.name ?: "",
+                                modifier = Modifier.weight(1f, fill = false),
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            if (!section.includeInWorkout) {
+                                Spacer(Modifier.width(8.dp))
+                                Surface(
+                                    shape = MaterialTheme.shapes.extraSmall,
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(Icons.Outlined.VisibilityOff, contentDescription = null, modifier = Modifier.size(12.dp))
+                                        Text("Not in workout", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                            }
+                            OverflowMenu("Section options") { close ->
+                                MenuItem("Rename section", Icons.Outlined.Edit) { close(); onRenameSection(sectionId) }
+                                if (section.includeInWorkout) {
+                                    MenuItem("Leave out of workouts", Icons.Outlined.VisibilityOff) {
+                                        close(); onSetSectionIncluded(sectionId, false)
+                                    }
+                                } else {
+                                    MenuItem("Include in workouts", Icons.Outlined.Visibility) {
+                                        close(); onSetSectionIncluded(sectionId, true)
+                                    }
+                                }
+                                MenuItem("Remove section", Icons.Outlined.Delete, destructive = true) {
+                                    close(); onRemoveSection(sectionId)
+                                }
+                            }
+                        }
+                        ExerciseList(
+                            exercises = section.exercises,
+                            reorderKey = "section-$sectionId",
+                            autoScroller = autoScroller,
+                            selectedIds = selectedIds,
+                            selecting = selecting,
+                            canMove = true,
+                            onReorderIds = onReorderExerciseIds,
+                            onToggleSelect = onToggleSelect,
+                            onEditTarget = onEditTarget,
+                            onMoveToSection = { movingExerciseId = it },
+                            onRemove = onRemoveExercise,
+                        )
+                        AddExerciseButton { onAddExercise(sectionId) }
+                    }
                 }
             }
         }
@@ -449,6 +607,53 @@ private fun DayCard(
     }
 }
 
+@Composable
+private fun AddExerciseButton(onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.padding(start = 4.dp),
+        contentPadding = ButtonDefaults.TextButtonWithIconContentPadding,
+    ) {
+        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(4.dp))
+        Text("Add exercise")
+    }
+}
+
+@Composable
+private fun SelectionBar(
+    count: Int,
+    canMakeSuperset: Boolean,
+    canUngroup: Boolean,
+    onMakeSuperset: () -> Unit,
+    onUngroup: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClear) { Icon(Icons.Rounded.Close, contentDescription = "Clear selection") }
+            Text("$count selected", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            if (canUngroup) {
+                TextButton(onClick = onUngroup) {
+                    Icon(Icons.Outlined.LinkOff, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Ungroup")
+                }
+            }
+            TextButton(onClick = onMakeSuperset, enabled = canMakeSuperset) {
+                Icon(Icons.Outlined.Link, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Superset")
+            }
+        }
+    }
+}
+
 /**
  * The exercises of one section as drag-reorderable blocks; a superset moves as one block.
  * Reordering reports the full new id order for the section.
@@ -459,6 +664,7 @@ private fun ColumnScope.ExerciseList(
     reorderKey: Any,
     autoScroller: DragAutoScroller,
     selectedIds: Set<Long>,
+    selecting: Boolean,
     canMove: Boolean,
     onReorderIds: (List<Long>) -> Unit,
     onToggleSelect: (Long) -> Unit,
@@ -480,45 +686,42 @@ private fun ColumnScope.ExerciseList(
         val handle: @Composable () -> Unit = {
             DragHandle(reorder, index, blocks.size, autoScroller, onMoveBlock)
         }
+        val row: @Composable (BuilderExerciseUi, @Composable () -> Unit, Modifier) -> Unit = { exercise, rowHandle, modifier ->
+            ExerciseRow(
+                exercise = exercise,
+                selecting = selecting,
+                selected = exercise.id in selectedIds,
+                canMove = canMove,
+                modifier = modifier,
+                handle = rowHandle,
+                onToggleSelect = { onToggleSelect(exercise.id) },
+                onEditTarget = { onEditTarget(exercise) },
+                onMoveToSection = { onMoveToSection(exercise.id) },
+                onRemove = { onRemove(exercise.id) },
+            )
+        }
         when (block) {
-            is BuilderBlock.Single -> {
-                val exercise = block.exercise
-                ExerciseRow(
-                    exercise = exercise,
-                    selected = exercise.id in selectedIds,
-                    canMove = canMove,
-                    modifier = Modifier.reorderItem(reorder, index),
-                    handle = handle,
-                    onToggleSelect = { onToggleSelect(exercise.id) },
-                    onEditTarget = { onEditTarget(exercise) },
-                    onMoveToSection = { onMoveToSection(exercise.id) },
-                    onRemove = { onRemove(exercise.id) },
-                )
-            }
+            is BuilderBlock.Single -> row(block.exercise, handle, Modifier.reorderItem(reorder, index))
             is BuilderBlock.Superset -> {
                 Surface(
-                    modifier = Modifier.fillMaxWidth().reorderItem(reorder, index),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).reorderItem(reorder, index),
                     shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryFixed,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
                 ) {
-                    Column(Modifier.padding(8.dp)) {
+                    Column(Modifier.padding(vertical = 4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             handle()
-                            Text("⛓ SUPERSET", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
-                        }
-                        block.members.forEach { member ->
-                            ExerciseRow(
-                                exercise = member,
-                                selected = member.id in selectedIds,
-                                canMove = canMove,
-                                handle = {},
-                                onToggleSelect = { onToggleSelect(member.id) },
-                                onEditTarget = { onEditTarget(member) },
-                                onMoveToSection = { onMoveToSection(member.id) },
-                                onRemove = { onRemove(member.id) },
+                            Icon(
+                                Icons.Outlined.Link,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary,
                             )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Superset", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                         }
+                        block.members.forEach { member -> row(member, { Spacer(Modifier.width(32.dp)) }, Modifier) }
                     }
                 }
             }
@@ -547,9 +750,11 @@ private fun buildBuilderBlocks(exercises: List<BuilderExerciseUi>): List<Builder
     return blocks
 }
 
+
 @Composable
 private fun ExerciseRow(
     exercise: BuilderExerciseUi,
+    selecting: Boolean,
     selected: Boolean,
     canMove: Boolean,
     modifier: Modifier = Modifier,
@@ -561,41 +766,59 @@ private fun ExerciseRow(
 ) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         handle()
-        Checkbox(checked = selected, onCheckedChange = { onToggleSelect() })
-        exercise.supersetLabel?.let {
-            Text(
-                text = it,
-                modifier = Modifier.padding(end = 4.dp),
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.labelMedium,
-            )
-        }
-        Column(Modifier.weight(1f)) {
-            Text(exercise.name, style = MaterialTheme.typography.bodyLarge)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = exercise.targetLabel ?: "Set target",
-                    modifier = Modifier.clickable(onClick = onEditTarget).padding(2.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                if (canMove) {
-                    Text(
-                        text = "· Move",
-                        modifier = Modifier.clickable(onClick = onMoveToSection).padding(2.dp),
+        if (selecting) Checkbox(checked = selected, onCheckedChange = { onToggleSelect() })
+        Column(Modifier.weight(1f).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                exercise.supersetLabel?.let {
+                    Surface(
+                        shape = MaterialTheme.shapes.extraSmall,
                         color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ) {
+                        Text(it, modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp), style = MaterialTheme.typography.labelSmall)
+                    }
                 }
+                Text(
+                    text = exercise.name,
+                    modifier = Modifier.weight(1f, fill = false),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                TargetChip(label = exercise.targetLabel, onClick = onEditTarget)
+                exercise.targetArea?.let { TargetAreaPill(it) }
             }
         }
-        exercise.targetArea?.let { TargetAreaPill(it) }
+        OverflowMenu("Exercise options") { close ->
+            MenuItem("Set target", Icons.Outlined.Tune) { close(); onEditTarget() }
+            MenuItem(if (selected) "Deselect" else "Select for superset", Icons.Outlined.CheckBox) {
+                close(); onToggleSelect()
+            }
+            if (canMove) {
+                MenuItem("Move to section", Icons.AutoMirrored.Outlined.DriveFileMove) { close(); onMoveToSection() }
+            }
+            MenuItem("Remove", Icons.Outlined.Delete, destructive = true) { close(); onRemove() }
+        }
+    }
+}
+
+/** "3 × 10" target, or a "+ Target" prompt when none is set. */
+@Composable
+private fun TargetChip(label: String?, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.small,
+        color = if (label != null) colors.primaryContainer else colors.surface,
+        contentColor = if (label != null) colors.onPrimaryContainer else colors.primary,
+        border = if (label != null) null else BorderStroke(1.dp, colors.outlineVariant),
+    ) {
         Text(
-            text = "✕",
-            modifier = Modifier.clickable(onClick = onRemove).padding(6.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge,
+            text = label ?: "+ Target",
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelMedium,
         )
     }
 }

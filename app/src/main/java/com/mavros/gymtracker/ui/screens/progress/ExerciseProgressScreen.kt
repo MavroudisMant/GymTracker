@@ -9,24 +9,33 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mavros.gymtracker.ui.components.LocalWeightUnit
+import com.mavros.gymtracker.ui.components.GymTopBar
+import com.mavros.gymtracker.ui.components.SectionLabel
 import com.mavros.gymtracker.ui.components.formatWeight
 
 @Composable
@@ -39,13 +48,23 @@ fun ExerciseProgressScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
-        topBar = { ProgressHeader(title = state?.name ?: "", onEdit = { onEdit(exerciseId) }, onBack = onBack) },
+        topBar = {
+            GymTopBar(
+                title = state?.name ?: "",
+                onBack = onBack,
+                actions = {
+                    IconButton(onClick = { onEdit(exerciseId) }) {
+                        Icon(Icons.Outlined.Edit, contentDescription = "Edit exercise")
+                    }
+                },
+            )
+        },
     ) { padding ->
         val ui = state
         LazyColumn(
             modifier = Modifier.padding(padding).fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (ui == null) return@LazyColumn
             item {
@@ -53,26 +72,54 @@ fun ExerciseProgressScreen(
                 val repsSuffix = if (ui.isTimed) "s" else ""
                 val repsWord = if (ui.isTimed) "sec" else "reps"
                 val pr = ui.pr
-                val text = when {
-                    pr == null -> "No personal record yet"
-                    pr.weight != null ->
-                        "🏆 PR: ${pr.weight.formatWeight()} $unit × ${pr.reps}$repsSuffix · ${pr.dateLabel}"
-                    else -> "🏆 PR: ${pr.reps} $repsWord · ${pr.dateLabel}"
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.EmojiEvents, contentDescription = null, modifier = Modifier.size(32.dp))
+                        Column {
+                            Text("Personal record", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                text = when {
+                                    pr == null -> "None yet"
+                                    pr.weight != null -> "${pr.weight.formatWeight()} $unit × ${pr.reps}$repsSuffix"
+                                    else -> "${pr.reps} $repsWord"
+                                },
+                                style = MaterialTheme.typography.headlineSmall,
+                            )
+                            if (pr != null) Text(pr.dateLabel, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
-                Text(text, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyLarge)
             }
             item {
-                if (ui.chartWeights.size >= 2) {
-                    WeightChart(ui.chartWeights, Modifier.fillMaxWidth().height(160.dp))
-                } else {
-                    Text(
-                        text = "Not enough data to chart yet.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                Card(
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                        Text("Top weight per session", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(12.dp))
+                        if (ui.chartWeights.size >= 2) {
+                            WeightChart(ui.chartWeights, Modifier.fillMaxWidth().height(160.dp))
+                        } else {
+                            Text(
+                                text = "Log this exercise in two or more workouts to see a chart.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
                 }
             }
-            item { HorizontalDivider() }
+            item { SectionLabel("History") }
             if (ui.sessions.isEmpty()) {
                 item {
                     Text(
@@ -83,38 +130,26 @@ fun ExerciseProgressScreen(
                 }
             } else {
                 items(ui.sessions) { session ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(session.dateLabel, style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            text = session.setsSummary,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(session.dateLabel, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                text = session.setsSummary,
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.End,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun ProgressHeader(title: String, onEdit: () -> Unit, onBack: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surface) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(top = 4.dp, end = 8.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onBack) { Text("←") }
-            Text(
-                text = title,
-                modifier = Modifier.weight(1f),
-                fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.titleLarge,
-            )
-            TextButton(onClick = onEdit) { Text("✎ Edit") }
         }
     }
 }

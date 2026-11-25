@@ -3,9 +3,12 @@ package com.mavros.gymtracker.ui.components
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DragIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -151,7 +154,7 @@ private class LongPressViewConfiguration(
     override val longPressTimeoutMillis: Long get() = longPressMs
 }
 
-/** A "≡" handle: long-press and drag it to move item [index] within a list of [count] items. */
+/** A drag handle: long-press and drag it to move item [index] within a list of [count] items. */
 @Composable
 fun DragHandle(
     state: ReorderState,
@@ -166,8 +169,9 @@ fun DragHandle(
     val base = LocalViewConfiguration.current
     val longPressConfig = remember(base) { LongPressViewConfiguration(base, DRAG_LONG_PRESS_MS) }
     CompositionLocalProvider(LocalViewConfiguration provides longPressConfig) {
-        Text(
-            text = "≡",
+        Icon(
+            Icons.Rounded.DragIndicator,
+            contentDescription = "Drag to reorder",
             modifier = modifier
                 .onGloballyPositioned { handleTopInWindow = it.positionInWindow().y }
                 .pointerInput(state, autoScroller, index, count) {
@@ -196,9 +200,9 @@ fun DragHandle(
                         },
                     )
                 }
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.titleMedium,
+                .padding(horizontal = 6.dp, vertical = 8.dp)
+                .size(20.dp),
+            tint = MaterialTheme.colorScheme.outline,
         )
     }
 }

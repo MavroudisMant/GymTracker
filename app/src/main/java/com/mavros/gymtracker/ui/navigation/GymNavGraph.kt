@@ -1,10 +1,34 @@
 package com.mavros.gymtracker.ui.navigation
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.ListAlt
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.rounded.FitnessCenter
+import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.ListAlt
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mavros.gymtracker.data.BackupRepository
@@ -38,16 +62,40 @@ fun GymNavGraph(
     appScope: CoroutineScope,
 ) {
     val navController = rememberNavController()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = backStackEntry?.destination
+    val showBottomBar = TopLevelTab.entries.any { it.route == currentDestination?.route }
 
-    NavHost(navController = navController, startDestination = Routes.HOME) {
+    Scaffold(
+        // Each screen handles its own insets; this scaffold only adds the bottom bar.
+        contentWindowInsets = WindowInsets(0),
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar {
+                    TopLevelTab.entries.forEach { tab ->
+                        val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = { navController.navigateToTab(tab.route) },
+                            icon = { Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null) },
+                            label = { Text(tab.label) },
+                        )
+                    }
+                }
+            }
+        },
+    ) { outerPadding ->
+    NavHost(
+        navController = navController,
+        startDestination = Routes.HOME,
+        modifier = Modifier.padding(outerPadding).consumeWindowInsets(outerPadding),
+    ) {
         composable(Routes.HOME) {
             val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(workoutRepository))
             HomeScreen(
                 viewModel = viewModel,
                 onStartWorkout = { navController.navigate(Routes.logWorkout()) },
-                onStartFromTemplate = { navController.navigate(Routes.TEMPLATES) },
-                onOpenProgress = { navController.navigate(Routes.EXERCISE_PROGRESS) },
-                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onStartFromTemplate = { navController.navigateToTab(Routes.TEMPLATES) },
                 onOpenSession = { id -> navController.navigate(Routes.logWorkout(id)) },
             )
         }
@@ -69,11 +117,12 @@ fun GymNavGraph(
         }
 
         composable(Routes.TEMPLATES) {
-            val viewModel: TemplatesListViewModel = viewModel(factory = TemplatesListViewModel.factory(templateRepository))
+            val viewModel: TemplatesListViewModel =
+                viewModel(factory = TemplatesListViewModel.factory(templateRepository, workoutRepository))
             TemplatesListScreen(
                 viewModel = viewModel,
                 onOpenTemplate = { id -> navController.navigate(Routes.templateBuilder(id)) },
-                onBack = { navController.popBackStack() },
+                onStartWorkout = { sessionId -> navController.navigate(Routes.logWorkout(sessionId)) },
             )
         }
 
@@ -97,7 +146,6 @@ fun GymNavGraph(
             ExerciseListScreen(
                 viewModel = viewModel,
                 onOpenExercise = { id -> navController.navigate(Routes.exerciseDetail(id)) },
-                onBack = { navController.popBackStack() },
             )
         }
 
@@ -137,9 +185,30 @@ fun GymNavGraph(
                 viewModel(factory = SettingsViewModel.factory(settingsRepository, workoutRepository, backupRepository))
             SettingsScreen(
                 viewModel = viewModel,
-                onManageExercises = { navController.navigate(Routes.EXERCISE_PROGRESS) },
-                onBack = { navController.popBackStack() },
+                onManageExercises = { navController.navigateToTab(Routes.EXERCISE_PROGRESS) },
             )
         }
+    }
+    }
+}
+
+private enum class TopLevelTab(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+    val selectedIcon: ImageVector,
+) {
+    Workouts(Routes.HOME, "Workouts", Icons.Outlined.FitnessCenter, Icons.Rounded.FitnessCenter),
+    Templates(Routes.TEMPLATES, "Templates", Icons.Outlined.ListAlt, Icons.Rounded.ListAlt),
+    Progress(Routes.EXERCISE_PROGRESS, "Progress", Icons.Outlined.Insights, Icons.Rounded.Insights),
+    Settings(Routes.SETTINGS, "Settings", Icons.Outlined.Settings, Icons.Rounded.Settings),
+}
+
+/** Switches tabs the standard way: one copy of each tab, each keeping its own back stack. */
+private fun NavController.navigateToTab(route: String) {
+    navigate(route) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }

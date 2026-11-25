@@ -4,11 +4,26 @@ import android.content.Context
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.Scale
+import androidx.compose.material.icons.outlined.TableChart
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -22,8 +37,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -32,7 +48,8 @@ import com.mavros.gymtracker.BuildConfig
 import com.mavros.gymtracker.MainActivity
 import com.mavros.gymtracker.data.WeightUnit
 import com.mavros.gymtracker.ui.components.ConfirmDialog
-import com.mavros.gymtracker.ui.screens.templates.TitleBar
+import com.mavros.gymtracker.ui.components.GymTopBar
+import com.mavros.gymtracker.ui.components.SectionLabel
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -40,7 +57,6 @@ import kotlin.system.exitProcess
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onManageExercises: () -> Unit,
-    onBack: () -> Unit,
 ) {
     val unit by viewModel.unit.collectAsStateWithLifecycle()
     val exportContent by viewModel.exportContent.collectAsStateWithLifecycle()
@@ -101,30 +117,57 @@ fun SettingsScreen(
         )
     }
 
-    Scaffold(topBar = { TitleBar("Settings", onBack) }) { padding ->
+    Scaffold(topBar = { GymTopBar("Settings") }) { padding ->
         Column(
             Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .padding(16.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Units", style = MaterialTheme.typography.bodyLarge)
-                UnitToggle(selected = unit, onSelect = viewModel::setUnit)
+            SectionLabel("Preferences")
+            SettingsGroup {
+                ListItem(
+                    headlineContent = { Text("Weight unit") },
+                    supportingContent = { Text("Changing it doesn't convert logged weights") },
+                    leadingContent = { Icon(Icons.Outlined.Scale, contentDescription = null) },
+                    trailingContent = { UnitToggle(selected = unit, onSelect = viewModel::setUnit) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
             }
-            HorizontalDivider()
-            SettingsRow("Export data", "⤓", onClick = viewModel::requestExport)
-            HorizontalDivider()
-            SettingsRow("Back up database", "⤓", onClick = viewModel::requestBackup)
-            HorizontalDivider()
-            SettingsRow("Restore from backup", "⤒", onClick = { pickBackup.launch(arrayOf("*/*")) })
-            HorizontalDivider()
-            SettingsRow("Manage exercises", "›", onClick = onManageExercises)
-            HorizontalDivider()
+            SectionLabel("Exercises")
+            SettingsGroup {
+                SettingsRow(
+                    label = "Manage exercises",
+                    description = "Rename, re-categorise or delete",
+                    icon = Icons.Outlined.FitnessCenter,
+                    onClick = onManageExercises,
+                )
+            }
+            SectionLabel("Data")
+            SettingsGroup {
+                SettingsRow(
+                    label = "Export as CSV",
+                    description = "Every logged set, for spreadsheets",
+                    icon = Icons.Outlined.TableChart,
+                    onClick = viewModel::requestExport,
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                SettingsRow(
+                    label = "Back up database",
+                    description = "Save or send a full copy",
+                    icon = Icons.Outlined.CloudUpload,
+                    onClick = viewModel::requestBackup,
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                SettingsRow(
+                    label = "Restore from backup",
+                    description = "Replaces everything on this phone",
+                    icon = Icons.Outlined.Restore,
+                    onClick = { pickBackup.launch(arrayOf("*/*")) },
+                )
+            }
             Text(
                 text = "Version ${BuildConfig.VERSION_NAME} · offline",
                 modifier = Modifier.padding(vertical = 12.dp),
@@ -155,39 +198,41 @@ private fun restart(context: Context) {
 }
 
 @Composable
-private fun SettingsRow(label: String, trailing: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge)
-        Text(trailing, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
+private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLowest) {
+        Column(content = content)
     }
 }
 
 @Composable
+private fun SettingsRow(label: String, description: String, icon: ImageVector, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(label) },
+        supportingContent = { Text(description) },
+        leadingContent = { Icon(icon, contentDescription = null) },
+        trailingContent = {
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        modifier = Modifier.clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun UnitToggle(selected: WeightUnit, onSelect: (WeightUnit) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        WeightUnit.entries.forEach { option ->
-            val isSelected = option == selected
-            val colors = MaterialTheme.colorScheme
-            Surface(
+    SingleChoiceSegmentedButtonRow {
+        WeightUnit.entries.forEachIndexed { index, option ->
+            SegmentedButton(
+                selected = option == selected,
                 onClick = { onSelect(option) },
-                shape = MaterialTheme.shapes.small,
-                color = if (isSelected) colors.primaryContainer else colors.surface,
-                contentColor = if (isSelected) colors.onPrimaryFixed else colors.onSurface,
-                border = if (isSelected) null else BorderStroke(1.dp, colors.outlineVariant),
-            ) {
-                Text(
-                    text = option.label,
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = WeightUnit.entries.size),
+                icon = {},
+            ) { Text(option.label) }
         }
     }
 }

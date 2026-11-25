@@ -31,6 +31,8 @@ data class TemplateBuilderUi(
 data class BuilderDayUi(
     val id: Long,
     val title: String,
+    /** The user-given name, without the "Day N" prefix; null if unnamed. */
+    val name: String?,
     /** The first entry is always the unsectioned group (id = null). */
     val sections: List<BuilderSectionUi>,
 ) {
@@ -280,6 +282,10 @@ class TemplateBuilderViewModel(
         }
     }
 
+    fun clearSelection() {
+        _editState.update { it.copy(selectedExerciseIds = emptySet()) }
+    }
+
     /** Groups the selected exercises of a day into a superset with the next free letter (A, B, …). */
     fun makeSuperset(dayId: Long) {
         val day = template.value?.days?.firstOrNull { it.id == dayId } ?: return
@@ -377,6 +383,7 @@ class TemplateBuilderViewModel(
         return BuilderDayUi(
             id = day.id,
             title = "Day ${day.dayNumber}" + (day.name?.let { " · $it" } ?: ""),
+            name = day.name,
             sections = sectionUis,
         )
     }

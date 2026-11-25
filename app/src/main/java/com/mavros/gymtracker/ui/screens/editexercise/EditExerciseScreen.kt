@@ -28,7 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mavros.gymtracker.ui.components.ConfirmDialog
 import com.mavros.gymtracker.ui.components.MeasureToggle
 import com.mavros.gymtracker.ui.components.TargetAreaSelector
-import com.mavros.gymtracker.ui.screens.templates.TitleBar
+import com.mavros.gymtracker.ui.components.GymTopBar
 
 @Composable
 fun EditExerciseScreen(
@@ -54,7 +54,7 @@ fun EditExerciseScreen(
         }
     }
 
-    Scaffold(topBar = { TitleBar("Edit exercise", onBack) }) { padding ->
+    Scaffold(topBar = { GymTopBar("Edit exercise", onBack = onBack) }) { padding ->
         Column(
             modifier = Modifier
                 .padding(padding)
@@ -76,23 +76,23 @@ fun EditExerciseScreen(
                 isError = state.hasCollision,
                 singleLine = true,
             )
-            Text("Target area", style = MaterialTheme.typography.labelLarge)
+            Text("Target area", modifier = Modifier.padding(top = 4.dp), style = MaterialTheme.typography.titleSmall)
             TargetAreaSelector(selected = state.targetArea, onSelect = viewModel::onAreaSelect)
             Text(
-                text = "✕ Tap the selected area to clear it.",
+                text = "Tap the selected area again to clear it.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
             MeasureToggle(isTimed = state.isTimed, onChange = viewModel::onTimedChange)
             Text(
-                text = "ℹ Renaming updates this exercise across all past sessions.",
+                text = "Renaming updates this exercise across all past sessions.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = onBack, modifier = Modifier.weight(1f)) { Text("Cancel") }
                 Button(onClick = viewModel::save, modifier = Modifier.weight(1f), enabled = state.canSave) {
-                    Text("✓ Save")
+                    Text("Save")
                 }
             }
             TextButton(

@@ -79,6 +79,12 @@ data class ExerciseSessionHistory(
     val sets: List<SetEntry>,
 )
 
+/** Total weight × reps of one session (timed exercises and bodyweight sets excluded). */
+data class SessionVolume(
+    val sessionId: Long,
+    val volume: Double,
+)
+
 data class PersonalRecord(
     val weight: Double?,
     val reps: Int,
