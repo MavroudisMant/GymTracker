@@ -13,3 +13,18 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Kotlin 2 compiler data
+.kotlin/
+
+# Per-machine Android Studio state
+/.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
+/.idea/other.xml
+/.idea/studiobot.xml
+
+# Build artifacts and signing keys
+*.apk
+*.aab
+*.jks
+*.keystore
